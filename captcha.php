@@ -10,38 +10,97 @@
  *
  */
 
+var_dump($_GET);
+$dst_dir = './';
+
+if (isset($_GET['dest-directory'])) {	
+	if (!file_exists ( $_GET['dest-directory'] )) {
+		$error =  "Directory ".$_GET['dest-directory']. " does not exist.\n";
+		throw new Exception($error);
+	}
+	
+	if (!is_writable ( $_GET['dest-directory'] )) {
+		$error =  "Cannot access ".$_GET['dest-directory']. ". Permission denied.\n";
+		throw new Exception($error);
+	}
+	
+	$dst_dir = $_GET['dest-directory'];
+}
+
+
+if (isset($_GET['captext-list'])) {
+	if (!file_exists ( $_GET['captext-list'] )) {
+		$error =  "File ".$_GET['captext-list']. " does not exist.\n";
+		throw new Exception($error);
+	}
+	
+	if (!is_writable ( $_GET['captext-list'] )) {
+		$error =  "Cannot access ".$_GET['captext-list']. ". Permission denied.\n";
+		throw new Exception($error);
+	}
+	
+	$captext_list = $_GET['captext-list'];
+} else {
+	$error =  "Please specify captcha text list files in captext-list=filename";
+	throw new Exception($error);
+}
+
 
 session_start();
+  
+// read text line by line of the file
+$handle = fopen($captext_list, "r");
+if ($handle) {
+    while (($line = fgets($handle)) !== false) {
+        // new instance of captcha
+        $captcha = new SimpleCaptcha();
 
+		// OPTIONAL Change configuration...
+		//$captcha->wordsFile = 'words/es.php';
+		//$captcha->session_var = 'secretword';
+		//$captcha->lineWidth = 3;
+		//$captcha->scale = 3; $captcha->blur = true;
+		//$captcha->resourcesPath = "/var/cool-php-captcha/resources";
 
+		// OPTIONAL Simple autodetect language example
+		/*
+		if (!empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+			$langs = array('en', 'es');
+			$lang  = substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2);
+			if (in_array($lang, $langs)) {
+				$captcha->wordsFile = "words/$lang.php";
+			}
+		}
+		*/
 
-$captcha = new SimpleCaptcha();
+		$captcha->imageFormat = 'png';
+		$captcha->minWordLength = 6;
+		$captcha->maxWordLength = 6;
+		$captcha->dst_dir = $dst_dir;
 
+		// Option for create data samples
+		$captcha->fonts = array(
+				'Antykwa'  => array('spacing' => -3, 'minSize' => 27, 'maxSize' => 30, 'font' => 'AntykwaBold.ttf'),        
+			);
 
-
-// OPTIONAL Change configuration...
-//$captcha->wordsFile = 'words/es.php';
-//$captcha->session_var = 'secretword';
-//$captcha->imageFormat = 'png';
-//$captcha->lineWidth = 3;
-//$captcha->scale = 3; $captcha->blur = true;
-//$captcha->resourcesPath = "/var/cool-php-captcha/resources";
-
-// OPTIONAL Simple autodetect language example
-/*
-if (!empty($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
-    $langs = array('en', 'es');
-    $lang  = substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2);
-    if (in_array($lang, $langs)) {
-        $captcha->wordsFile = "words/$lang.php";
+		$captcha->colors = array(
+			array(0,0,0), // black    
+		  );        
+        
+        // remove special char
+        $static_text = preg_replace('/[^A-Za-z0-9\-]/', '', $line);;
+        
+        // Image generation
+		$captcha->CreateImage($static_text=$static_text);
     }
+
+    fclose($handle);
+} else {
+    // error opening the file.
+    $error =  "Error opening file\n";
+	throw new Exception($error);
 }
-*/
 
-
-
-// Image generation
-$captcha->CreateImage();
 
 
 
@@ -103,6 +162,8 @@ class SimpleCaptcha {
      *
      */
     public $resourcesPath = 'resources';
+    
+    public $dst_dir = './';
 
     /** Min word length (for non-dictionary random text generation) */
     public $minWordLength = 5;
@@ -203,7 +264,7 @@ class SimpleCaptcha {
 
 
 
-    public function CreateImage() {
+    public function CreateImage($static_text=null) {
         $ini = microtime(true);
 
         // cap difficulty
@@ -214,7 +275,10 @@ class SimpleCaptcha {
         $this->ImageAllocate();
         
         /** Text insertion */
-        $text = $this->GetCaptchaText();
+        if ($static_text == null)
+			$text = $this->GetCaptchaText();
+		else $text = $static_text;
+		
         $fontcfg  = $this->fonts[array_rand($this->fonts)];
         $this->WriteText($text, $fontcfg);
 
@@ -240,7 +304,7 @@ class SimpleCaptcha {
 
 
         /** Output */
-        $this->WriteImage();
+        $this->WriteImage($text);
         $this->Cleanup();
     }
 
@@ -380,6 +444,7 @@ class SimpleCaptcha {
         if ($extended) {
             $text   = preg_split('//', $text, -1, PREG_SPLIT_NO_EMPTY);
             $vocals = array('a', 'e', 'i', 'o', 'u');
+            
             foreach ($text as $i => $char) {
                 if (mt_rand(0, 1) && in_array($char, $vocals)) {
                     $text[$i] = $vocals[mt_rand(0, 4)];
@@ -515,13 +580,13 @@ class SimpleCaptcha {
     /**
      * File generation
      */
-    protected function WriteImage() {
+    protected function WriteImage($text) {
         if ($this->imageFormat == 'png' && function_exists('imagepng')) {
             header("Content-type: image/png");
-            imagepng($this->im);
+            imagepng($this->im, $this->dst_dir."/".$text);
         } else {
             header("Content-type: image/jpeg");
-            imagejpeg($this->im, null, 80);
+            imagejpeg($this->im, $this->dst_dir."/".$text);
         }
     }
 
